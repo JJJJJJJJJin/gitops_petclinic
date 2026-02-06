@@ -8,8 +8,6 @@ on:
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # <--- 중요: GITHUB_TOKEN에 쓰기 권한 부여
 
     steps:
       # 1. 코드 체크아웃
@@ -29,21 +27,23 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      # 4. Nginx 이미지 빌드 & 푸시 (이름 통일됨)
+      # 4. Nginx 이미지 빌드 & 푸시
       - name: Build & Push nginx Docker image
         run: |
           IMAGE_TAG=${GITHUB_SHA::7}
           docker build -t ${{ steps.login-ecr.outputs.registry }}/ecr-nginx:$IMAGE_TAG -f ./Dockerfile.nginx .
           docker push ${{ steps.login-ecr.outputs.registry }}/ecr-nginx:$IMAGE_TAG
+          echo "NGINX_IMAGE=${{ steps.login-ecr.outputs.registry }}/ecr-nginx:$IMAGE_TAG" >> $GITHUB_ENV
 
-      # 5. Tomcat 이미지 빌드 & 푸시 (이름 통일됨)
+      # 5. Tomcat 이미지 빌드 & 푸시
       - name: Build & Push tomcat Docker image
         run: |
           IMAGE_TAG=${GITHUB_SHA::7}
           docker build -t ${{ steps.login-ecr.outputs.registry }}/ecr-tomcat:$IMAGE_TAG -f ./Dockerfile.tomcat .
           docker push ${{ steps.login-ecr.outputs.registry }}/ecr-tomcat:$IMAGE_TAG
+          echo "TOMCAT_IMAGE=${{ steps.login-ecr.outputs.registry }}/ecr-tomcat:$IMAGE_TAG" >> $GITHUB_ENV
 
-      # 6. Deployment YAML 업데이트 (공백 추가됨)
+      # 6. Deployment YAML 업데이트
       - name: Update nginx Deployment YAML
         run: |
           IMAGE_TAG=${GITHUB_SHA::7}
@@ -54,15 +54,23 @@ jobs:
           IMAGE_TAG=${GITHUB_SHA::7}
           sed -i "s|image: .*|image: 935875533840.dkr.ecr.ap-northeast-2.amazonaws.com/ecr-tomcat:$IMAGE_TAG|" ./deployment-tomcat.yaml
 
-      # 7. 변경사항이 있으면 커밋 & 푸시 (문법 수정됨)
+      # 7. 변경사항이 있으면 커밋 & 푸시
+      #- name: Commit and push if there are changes
+      #  run: |
+      #    git config --global user.name 'GitHub Actions'
+      #    git config --global user.email 'github-actions@github.com'
+      #    git add ./deployment-nginx.yaml ./deployment-tomcat.yaml
+      #    git diff --quiet && git diff --staged --quiet || (
+      #    git commit -m "Update image tag to ${GITHUB_SHA}"
+      #    git push https://${{ secrets.PAT }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
+      #   )
+
       - name: Commit and Push changes
         run: |
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'github-actions@github.com'
           git add ./deployment-nginx.yaml ./deployment-tomcat.yaml
-          # 변경사항이 없으면 에러 안 내고 조용히 종료 (|| true)
           git diff --quiet && git diff --staged --quiet || (
-            git commit -m "Update image tag to ${GITHUB_SHA}"
-            # URL 형식 수정됨 (github.com/)
-            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/JJJJJJJJJin/gitops_deploy.git HEAD:main
+          git commit -m "Update image tag to ${GITHUB_SHA}"
+          git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com:JJJJJJJJJin/gitops_petclinic.git HEAD:main
           )
